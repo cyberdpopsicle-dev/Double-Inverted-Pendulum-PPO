@@ -152,8 +152,6 @@ double-inverted-pendulum-ppo/
 
 ├── images/
 
-├── models/
-
 └── docs/
 
 ---
@@ -220,6 +218,6 @@ Tehlil
 
 Bachelor of Science Capstone Project
 
-Department of Engineering and Computer Science
+Department of Mechanical Engineering
 
 2026
