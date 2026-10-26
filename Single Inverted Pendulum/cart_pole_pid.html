@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Inverted Pendulum PID Control Simulator</title>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #1a1a2e; color: #e0e0e0; margin: 0; padding: 20px; }
+        .container { max-width: 1050px; margin: 0 auto; background: #16213e; padding: 25px; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+        h2 { text-align: center; color: #00fff5; margin-top: 0; }
+        .flex-container { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; }
+        .canvas-card { flex: 1; min-width: 480px; text-align: center; }
+        canvas { background: #0f3460; border-radius: 8px; border: 2px solid #00fff5; }
+        .controls-card { flex: 1; min-width: 320px; background: #0f3460; padding: 20px; border-radius: 8px; }
+        .slider-group { margin-bottom: 14px; }
+        .slider-group label { display: flex; justify-content: space-between; font-weight: bold; color: #e0e0e0; font-size: 14px; }
+        input[type=range] { width: 100%; margin-top: 6px; accent-color: #00fff5; }
+        .btn-group { display: flex; gap: 10px; margin-top: 20px; }
+        button { flex: 1; padding: 10px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; color: white; transition: 0.2s; }
+        .btn-reset { background: #e94560; } .btn-reset:hover { background: #ff2e63; }
+        .btn-pause { background: #f39c12; } .btn-pause:hover { background: #d68910; }
+        .telemetry { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; background: #16213e; padding: 12px; border-radius: 6px; font-family: monospace; }
+        .telemetry span { color: #00fff5; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h2>Inverted Pendulum (Cart-Pole) PID Control</h2>
+    <div class="flex-container">
+        <div class="canvas-card">
+            <canvas id="simCanvas" width="520" height="340"></canvas>
+            <div class="telemetry">
+                <div>Angle (&theta;): <span id="valTheta">0.0</span>&deg;</div>
+                <div>Position (x): <span id="valX">0.00</span> m</div>
+                <div>Force (F): <span id="valF">0.00</span> N</div>
+                <div>State: <span id="valStatus" style="color:#00ff88;">Balancing</span></div>
+            </div>
+        </div>
+        <div class="controls-card">
+            <h3>Control Parameters</h3>
+            <div class="slider-group">
+                <label>Angle Kp: <span id="lblKp">120</span></label>
+                <input type="range" id="kp" min="0" max="300" step="1" value="120">
+            </div>
+            <div class="slider-group">
+                <label>Angle Ki: <span id="lblKi">5</span></label>
+                <input type="range" id="ki" min="0" max="50" step="0.5" value="5">
+            </div>
+            <div class="slider-group">
+                <label>Angle Kd: <span id="lblKd">25</span></label>
+                <input type="range" id="kd" min="0" max="100" step="0.5" value="25">
+            </div>
+            <div class="slider-group">
+                <label>Cart Position Gain (Kp_x): <span id="lblKpx">8</span></label>
+                <input type="range" id="kpx" min="0" max="20" step="0.5" value="8">
+            </div>
+            <div class="slider-group">
+                <label>Initial Angle (&deg;): <span id="lblAngle">12</span></label>
+                <input type="range" id="initAngle" min="-30" max="30" step="1" value="12">
+            </div>
+            <div class="btn-group">
+                <button class="btn-reset" onclick="resetSim()">Reset</button>
+                <button class="btn-pause" id="btnPause" onclick="togglePause()">Pause</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const canvas = document.getElementById('simCanvas');
+    const ctx = canvas.getContext('2d');
+    
+    const M = 1.0, m = 0.2, L = 0.5, g = 9.81, dt = 0.01;
+    let x = 0, dx = 0, theta = 0.2, dtheta = 0, integral_e = 0;
+    let isRunning = true;
+
+    function resetSim() {
+        x = 0; dx = 0;
+        const angleDeg = parseFloat(document.getElementById('initAngle').value);
+        theta = angleDeg * Math.PI / 180;
+        dtheta = 0;
+        integral_e = 0;
+    }
+
+    function togglePause() {
+        isRunning = !isRunning;
+        document.getElementById('btnPause').innerText = isRunning ? "Pause" : "Resume";
+    }
+
+    ['kp','ki','kd','kpx','initAngle'].forEach(id => {
+        const el = document.getElementById(id);
+        const lbl = document.getElementById('lbl' + id.charAt(0).toUpperCase() + id.slice(1));
+        el.addEventListener('input', () => { if(lbl) lbl.innerText = el.value; });
+    });
+
+    function updatePhysics() {
+        if(!isRunning) return;
+        
+        const Kp = parseFloat(document.getElementById('kp').value);
+        const Ki = parseFloat(document.getElementById('ki').value);
+        const Kd = parseFloat(document.getElementById('kd').value);
+        const Kpx = parseFloat(document.getElementById('kpx').value);
+        const Kdx = 2.0 * Math.sqrt(Kpx);
+
+        integral_e += theta * dt;
+        let F = (Kp * theta + Kd * dtheta + Ki * integral_e) + (Kpx * x + Kdx * dx);
+        F = Math.max(-150, Math.min(150, F));
+
+        const sinTh = Math.sin(theta), cosTh = Math.cos(theta);
+        const temp = (F + m * L * dtheta * dtheta * sinTh) / (M + m);
+        const d2theta = (g * sinTh - cosTh * temp) / (L * (4.0/3.0 - (m * cosTh * cosTh) / (M + m)));
+        const d2x = temp - (m * L * d2theta * cosTh) / (M + m);
+
+        dx += d2x * dt;
+        x += dx * dt;
+        dtheta += d2theta * dt;
+        theta += dtheta * dt;
+
+        document.getElementById('valTheta').innerText = (theta * 180 / Math.PI).toFixed(2);
+        document.getElementById('valX').innerText = x.toFixed(2);
+        document.getElementById('valF').innerText = F.toFixed(1);
+        
+        const isFallen = Math.abs(theta) > Math.PI / 3;
+        document.getElementById('valStatus').innerText = isFallen ? "Unstable / Fallen" : "Balancing";
+        document.getElementById('valStatus').style.color = isFallen ? "#e94560" : "#00ff88";
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const cx = canvas.width / 2;
+        const cy = canvas.height / 2 + 50;
+        const scale = 90;
+
+        // Draw Ground Track
+        ctx.strokeStyle = '#4e54c8';
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(20, cy + 20);
+        ctx.lineTo(canvas.width - 20, cy + 20);
+        ctx.stroke();
+
+        const cartX = cx + x * scale;
+        const cartY = cy;
+        const cartW = 75, cartH = 35;
+
+        // Draw Cart
+        ctx.fillStyle = '#00fff5';
+        ctx.fillRect(cartX - cartW/2, cartY - cartH/2, cartW, cartH);
+
+        // Draw Wheels
+        ctx.fillStyle = '#111';
+        ctx.beginPath();
+        ctx.arc(cartX - 22, cartY + cartH/2, 8, 0, Math.PI*2);
+        ctx.arc(cartX + 22, cartY + cartH/2, 8, 0, Math.PI*2);
+        ctx.fill();
+
+        // Draw Pendulum Pole
+        const poleLen = (2 * L) * scale;
+        const poleEndX = cartX + poleLen * Math.sin(theta);
+        const poleEndY = cartY - poleLen * Math.cos(theta);
+
+        ctx.strokeStyle = '#e94560';
+        ctx.lineWidth = 6;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(cartX, cartY);
+        ctx.lineTo(poleEndX, poleEndY);
+        ctx.stroke();
+
+        // Pivot Point
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(cartX, cartY, 5, 0, Math.PI*2);
+        ctx.fill();
+
+        // Bob Mass
+        ctx.fillStyle = '#ff2e63';
+        ctx.beginPath();
+        ctx.arc(poleEndX, poleEndY, 10, 0, Math.PI*2);
+        ctx.fill();
+    }
+
+    function loop() {
+        updatePhysics();
+        draw();
+        requestAnimationFrame(loop);
+    }
+    loop();
+</script>
+</body>
+</html>
